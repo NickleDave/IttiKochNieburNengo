@@ -1,4 +1,5 @@
-# IttiKochNieburNengo
+IttiKochNieburNengo
+===================
 
 - Implementation in Nengo of the model from [ITTIKOCHNEIBUR1998]_.
 - mapping onto brain parts inspired by [SHIPP2004]_.
