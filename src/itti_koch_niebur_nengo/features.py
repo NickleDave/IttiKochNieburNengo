@@ -2,9 +2,6 @@
 import cv2
 import numpy as np
 
-from .constants import GABOR_KERNEL_0, GABOR_KERNEL_45, \
-    GABOR_KERNEL_90, GABOR_KERNEL_135
-
 
 def get_channels(img):
     """take RGB image and convert to
