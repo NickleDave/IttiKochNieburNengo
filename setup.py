@@ -27,7 +27,7 @@ VERSION = '0.1.0'
 LICENSE = 'BSD'
 
 REQUIRED = [
-    'numpy', 'nengo', 'cv2',
+    'numpy', 'nengo', 'opencv-python',
 ]
 
 # What packages are optional?
