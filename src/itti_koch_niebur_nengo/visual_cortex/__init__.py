@@ -1,2 +1,2 @@
-from .vis_ctx import vis_ctx
+from .vis_ctx import make_vis_ctx
 
