@@ -1,7 +1,12 @@
 """functions to convert feature maps into conspicuity channels and to combine those
 to create the saliency "channel" S that feeds into the saliency map"""
+import warnings
+warnings.filterwarnings("error")
+
 import cv2
 import numpy as np
+
+from . import features
 
 
 def find_avg_local_max(map, thresh=1, step=16):
@@ -14,7 +19,13 @@ def find_avg_local_max(map, thresh=1, step=16):
             lmin, lmax, _, _ = cv2.minMaxLoc(local_img)
             if lmax > thresh:
                 local_max.append(lmax)
-    local_max = sum(local_max) / len(local_max)
+
+    # to avoid "divide by zero" error
+    # when Nengo tests function while adding to network
+    if len(local_max) > 0:
+        local_max = sum(local_max) / len(local_max)
+    else:
+        return 0
     return local_max
 
 
@@ -25,11 +36,15 @@ def _normal(ftr_map, minmax=(0, 10)):
     the new minimum to all values"""
     # normalize map to range [0, 1]
     map_range = ftr_map.max() - ftr_map.min()
-    ftr_map = (ftr_map - ftr_map.min()) / map_range
 
-    # then convert to desired range
-    new_range = minmax[1] - minmax[0]
-    ftr_map = (ftr_map * new_range) + minmax[0]
+    if map_range == 0:
+        pass  # don't do anything, because there's no range to normalize
+    else:
+        ftr_map = (ftr_map - ftr_map.min()) / map_range
+        # then convert to desired range
+        new_range = minmax[1] - minmax[0]
+        ftr_map = (ftr_map * new_range) + minmax[0]
+
     return ftr_map
 
 
@@ -81,7 +96,7 @@ def I_conspicuity(I_maps, width, height, minmax=(0, 10), thresh=1, step=16):
                   for map_ in I_maps]
     norml_maps = [cv2.resize(map_, size, interpolation=cv2.INTER_LINEAR)
                   for map_ in norml_maps]
-    I_bar = np.sum(norml_maps)
+    I_bar = np.sum(norml_maps, axis=0)
     return I_bar
 
 
@@ -114,10 +129,10 @@ def C_conspicuity(RG_maps, BY_maps, width, height, minmax=(0, 10), thresh=1, ste
     BY_norml_maps = [cv2.resize(map_, size, interpolation=cv2.INTER_LINEAR)
                      for map_ in BY_norml_maps]
 
-    C_bar = [np.sum([RG_norml_map, BY_norml_map])
+    C_bar = [np.sum([RG_norml_map, BY_norml_map], axis=0)
              for RG_norml_map, BY_norml_map in zip(RG_norml_maps, BY_norml_maps)]
 
-    C_bar = np.sum(C_bar)
+    C_bar = np.sum(C_bar, axis=0)
     return C_bar
 
 
@@ -142,15 +157,15 @@ def O_conspicuity(O_maps, width, height, n_maps_per_theta=6,
     size = (width, height)
 
     O_bar = []
-    for map_start_ind in range(stop=len(O_maps), step=n_maps_per_theta):
+    for map_start_ind in range(0, len(O_maps), n_maps_per_theta):
         maps_this_theta = O_maps[map_start_ind : map_start_ind + n_maps_per_theta]
         norml_maps_this_theta = [normalize(map_, minmax, thresh, step)
                                  for map_ in maps_this_theta]
         norml_maps_this_theta = [cv2.resize(map_, size, interpolation=cv2.INTER_LINEAR)
                                  for map_ in norml_maps_this_theta]
-        O_bar.append(np.sum(norml_maps_this_theta))
+        O_bar.append(np.sum(norml_maps_this_theta, axis=0))
 
-    O_bar = np.sum(O_bar)
+    O_bar = np.sum(O_bar, axis=0)
     return O_bar
 
 
@@ -176,4 +191,32 @@ def compute_S(I_bar, C_bar, O_bar, minmax=(0, 10), thresh=1, step=16):
         to_sum.append(
             normalize(conspicuity_channel, minmax, thresh, step)
         )
-    return (1 / 3) * np.sum(to_sum)
+    return (1 / 3) * np.sum(to_sum, axis=0)
+
+
+def img_to_S(img, sigma=8, c_range=(2, 3, 4), delta_range=(3, 4),
+             thetas=(0, 45, 90, 135), ksize=(9, 9), gabor_sigma=4.0,
+             lambd=10, gamma=0.5, psi=0, ktype=cv2.CV_32F,
+             S_sigma=3, minmax=(0, 10), thresh=1, step=16
+             ):
+    """extract early features from image, create conspicuity channels
+    from features maps, and then sum to create S, the input to saliency map"""
+    # feature extraction
+    R, G, B, Y, I = features.get_channels(img)
+    I_maps = features.intensity_ftr_maps(I, sigma, c_range, delta_range)
+    RG_maps, BY_maps = features.color_ftr_maps(R, G, B, Y,
+                                               sigma, c_range, delta_range)
+    O_maps = features.orientation_ftr_maps(I, thetas, sigma, c_range,
+                                           delta_range, ksize, gabor_sigma,
+                                           lambd, gamma, psi, ktype)
+
+    # conspicuity channels, saliency computed from features
+    height, width = I_maps[S_sigma].shape[:2]
+    I_bar = I_conspicuity(I_maps, width, height, minmax, thresh, step)
+    C_bar = C_conspicuity(RG_maps, BY_maps, width, height, minmax, thresh, step)
+    n_maps_per_theta = len(c_range) * len(delta_range)
+    O_bar = O_conspicuity(O_maps, width, height, n_maps_per_theta,
+                          minmax, thresh, step)
+    S = compute_S(I_bar, C_bar, O_bar, minmax, thresh, step)
+
+    return S
