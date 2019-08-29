@@ -6,3 +6,5 @@ dist/
 .ipynb_checkpoints
 .idea/
 docs/_build
+data/
+
